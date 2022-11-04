@@ -24,10 +24,10 @@ type OnErrorEvent = {
     message?: string;
   };
 };
-
 export interface IMapboxNavigationProps {
   origin: Coordinate;
   destination: Coordinate;
+  route?: string;
   shouldSimulateRoute?: boolean;
   onLocationChange?: (event: OnLocationChangeEvent) => void;
   onRouteProgressChange?: (event: OnRouteProgressChangeEvent) => void;

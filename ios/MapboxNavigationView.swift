@@ -1,6 +1,7 @@
 import MapboxCoreNavigation
 import MapboxNavigation
 import MapboxDirections
+import Foundation
 
 // // adapted from https://pspdfkit.com/blog/2017/native-view-controllers-and-react-native/ and https://github.com/mslabenyak/react-native-mapbox-navigation/blob/master/ios/Mapbox/MapboxNavigationView.swift
 extension UIView {
@@ -28,7 +29,7 @@ class MapboxNavigationView: UIView, NavigationViewControllerDelegate {
   @objc var destination: NSArray = [] {
     didSet { setNeedsLayout() }
   }
-  
+  @objc var route: NSString = ""
   @objc var shouldSimulateRoute: Bool = false
   @objc var showsEndOfRouteFeedback: Bool = false
   @objc var hideStatusView: Bool = false
@@ -70,48 +71,44 @@ class MapboxNavigationView: UIView, NavigationViewControllerDelegate {
     guard origin.count == 2 && destination.count == 2 else { return }
     
     embedding = true
-
+      
+    // ToDo: Add support for additional waypoints. Route API doesn't currently support this.
     let originWaypoint = Waypoint(coordinate: CLLocationCoordinate2D(latitude: origin[1] as! CLLocationDegrees, longitude: origin[0] as! CLLocationDegrees))
     let destinationWaypoint = Waypoint(coordinate: CLLocationCoordinate2D(latitude: destination[1] as! CLLocationDegrees, longitude: destination[0] as! CLLocationDegrees))
 
-    // let options = NavigationRouteOptions(waypoints: [originWaypoint, destinationWaypoint])
     let options = NavigationRouteOptions(waypoints: [originWaypoint, destinationWaypoint], profileIdentifier: .automobileAvoidingTraffic)
-
-    Directions.shared.calculate(options) { [weak self] (_, result) in
-      guard let strongSelf = self, let parentVC = strongSelf.parentViewController else {
-        return
-      }
       
-      switch result {
-        case .failure(let error):
-          strongSelf.onError!(["message": error.localizedDescription])
-        case .success(let response):
-          guard let weakSelf = self else {
-            return
-          }
-          
-          let navigationService = MapboxNavigationService(routeResponse: response, routeIndex: 0, routeOptions: options, simulating: strongSelf.shouldSimulateRoute ? .always : .never)
-          
-          let navigationOptions = NavigationOptions(navigationService: navigationService)
-          let vc = NavigationViewController(for: response, routeIndex: 0, routeOptions: options, navigationOptions: navigationOptions)
+    let decoder = JSONDecoder()
+    decoder.userInfo[.options] = options
+    let decodedRoute: Route? = try? decoder.decode(Route.self, from: route.data(using: String.Encoding.utf8.rawValue)!)
 
-          vc.showsEndOfRouteFeedback = strongSelf.showsEndOfRouteFeedback
-          StatusView.appearance().isHidden = strongSelf.hideStatusView
-
-          NavigationSettings.shared.voiceMuted = strongSelf.mute;
-          
-          vc.delegate = strongSelf
-        
-          parentVC.addChild(vc)
-          strongSelf.addSubview(vc.view)
-          vc.view.frame = strongSelf.bounds
-          vc.didMove(toParent: parentVC)
-          strongSelf.navViewController = vc
-      }
-      
-      strongSelf.embedding = false
-      strongSelf.embedded = true
+    guard let parentVC = self.parentViewController else {
+      return
     }
+    if let route = decodedRoute {
+        let routeResponse = RouteResponse(httpResponse: nil, routes: [route], waypoints: [originWaypoint, destinationWaypoint],  options: .route(options), credentials: Directions.shared.credentials)
+        
+        let navigationService = MapboxNavigationService(routeResponse: routeResponse, routeIndex: 0, routeOptions: options, simulating: self.shouldSimulateRoute ? .always : .never)
+        
+        let navigationOptions = NavigationOptions(navigationService: navigationService)
+        let vc = NavigationViewController(for: routeResponse, routeIndex: 0, routeOptions: options, navigationOptions: navigationOptions)
+
+        vc.showsEndOfRouteFeedback = self.showsEndOfRouteFeedback
+        StatusView.appearance().isHidden = self.hideStatusView
+
+        NavigationSettings.shared.voiceMuted = self.mute;
+        
+        vc.delegate = self
+      
+        parentVC.addChild(vc)
+        self.addSubview(vc.view)
+        vc.view.frame = self.bounds
+        vc.didMove(toParent: parentVC)
+        self.navViewController = vc 
+    }
+    
+    self.embedding = false
+    self.embedded = true
   }
   
   func navigationViewController(_ navigationViewController: NavigationViewController, didUpdate progress: RouteProgress, with location: CLLocation, rawLocation: CLLocation) {
